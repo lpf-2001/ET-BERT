@@ -5,6 +5,11 @@ import random
 import argparse
 import torch
 import torch.nn as nn
+
+import sys
+import os
+# 获取项目根目录（ET-BERT），并添加到sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from uer.layers import *
 from uer.encoders import *
 from uer.utils.vocab import Vocab
