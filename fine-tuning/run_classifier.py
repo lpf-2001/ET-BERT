@@ -144,7 +144,7 @@ def batch_loader(batch_size, src, tgt, seg, soft_tgt=None):
 
 def read_dataset(args, path):
     dataset, columns = [], {}
-    datafile = current_dir+'/datasets/Rimmer/tor_100w_2500tr.npz'
+    datafile = current_dir+'/../datasets/Rimmer/tor_100w_2500tr.npz'
     with np.load(datafile, allow_pickle=True) as npzdata:
         data = npzdata['data']
         labels = npzdata['labels']
@@ -156,7 +156,7 @@ def read_dataset(args, path):
         y[np.where(labels == w)] = np.where(websites == w)[0][0]
 
     X_train, X_, y_train, y_ = train_test_split(data, y,
-                                    test_size=0.1,
+                                    test_size=0.99,
                                     random_state=0,
                                     stratify=y)
     X_train = X_train[:, :300]
@@ -234,7 +234,7 @@ def evaluate(args, dataset, print_confusion_matrix=False):
         print("Confusion matrix:")
         print(confusion)
         cf_array = confusion.numpy()
-        with open(current_dir+"/results/confusion_matrix",'w') as f:
+        with open(current_dir+"/../results/confusion_matrix",'w') as f:
             for cf_a in cf_array:
                 f.write(str(cf_a)+'\n')
         print("Report precision, recall, and f1:")
