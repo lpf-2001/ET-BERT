@@ -5,7 +5,7 @@ import random
 import argparse
 import torch
 import torch.nn as nn
-
+import pdb
 import sys
 import os
 # 获取项目根目录（ET-BERT），并添加到sys.path
@@ -22,6 +22,10 @@ from uer.model_saver import save_model
 from uer.opts import finetune_opts
 import tqdm
 import numpy as np
+from sklearn.model_selection import train_test_split
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+print("Current working directory:", current_dir)
 
 class Classifier(nn.Module):
     def __init__(self, args):
@@ -140,37 +144,38 @@ def batch_loader(batch_size, src, tgt, seg, soft_tgt=None):
 
 def read_dataset(args, path):
     dataset, columns = [], {}
-    with open(path, mode="r", encoding="utf-8") as f:
-        for line_id, line in enumerate(f):
-            if line_id == 0:
-                for i, column_name in enumerate(line.strip().split("\t")):
-                    columns[column_name] = i
-                continue
-            line = line[:-1].split("\t")
-            tgt = int(line[columns["label"]])
-            if args.soft_targets and "logits" in columns.keys():
-                soft_tgt = [float(value) for value in line[columns["logits"]].split(" ")]
-            if "text_b" not in columns:  # Sentence classification.
-                text_a = line[columns["text_a"]]
-                src = args.tokenizer.convert_tokens_to_ids([CLS_TOKEN] + args.tokenizer.tokenize(text_a))
-                seg = [1] * len(src)
-            else:  # Sentence-pair classification.
-                text_a, text_b = line[columns["text_a"]], line[columns["text_b"]]
-                src_a = args.tokenizer.convert_tokens_to_ids([CLS_TOKEN] + args.tokenizer.tokenize(text_a) + [SEP_TOKEN])
-                src_b = args.tokenizer.convert_tokens_to_ids(args.tokenizer.tokenize(text_b) + [SEP_TOKEN])
-                src = src_a + src_b
-                seg = [1] * len(src_a) + [2] * len(src_b)
+    datafile = current_dir+'/datasets/Rimmer/tor_100w_2500tr.npz'
+    with np.load(datafile, allow_pickle=True) as npzdata:
+        data = npzdata['data']
+        labels = npzdata['labels']
 
-            if len(src) > args.seq_length:
-                src = src[: args.seq_length]
-                seg = seg[: args.seq_length]
-            while len(src) < args.seq_length:
-                src.append(0)
-                seg.append(0)
-            if args.soft_targets and "logits" in columns.keys():
-                dataset.append((src, tgt, seg, soft_tgt))
-            else:
-                dataset.append((src, tgt, seg))
+    # Convert website to integer
+    y = labels.copy()
+    websites = np.unique(labels)
+    for w in websites:
+        y[np.where(labels == w)] = np.where(websites == w)[0][0]
+
+    X_train, X_, y_train, y_ = train_test_split(data, y,
+                                    test_size=0.1,
+                                    random_state=0,
+                                    stratify=y)
+    X_train = X_train[:, :300]
+    
+    count = 0
+    for text_a in X_train:
+        # pdb.set_trace()
+        text_a = " ".join(map(str,text_a))
+        src_a = args.tokenizer.convert_tokens_to_ids([CLS_TOKEN] + args.tokenizer.tokenize(text_a))
+        seg = [1] * len(src_a)
+        if len(src_a) > args.seq_length:
+            src_a = src_a[: args.seq_length]
+            seg = seg[: args.seq_length]
+        while len(src_a) < args.seq_length:
+            src_a.append(0)
+            seg.append(0)
+        dataset.append((src_a, int(y_train[count]), seg))
+        count += 1
+
 
     return dataset
 
@@ -229,7 +234,7 @@ def evaluate(args, dataset, print_confusion_matrix=False):
         print("Confusion matrix:")
         print(confusion)
         cf_array = confusion.numpy()
-        with open("/data2/lxj/pre-train/results/confusion_matrix",'w') as f:
+        with open(current_dir+"/results/confusion_matrix",'w') as f:
             for cf_a in cf_array:
                 f.write(str(cf_a)+'\n')
         print("Report precision, recall, and f1:")
@@ -287,6 +292,7 @@ def main():
     load_or_initialize_parameters(args, model)
 
     args.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(args.device)
     model = model.to(args.device)
 
     # Training phase.
@@ -330,6 +336,8 @@ def main():
     for epoch in tqdm.tqdm(range(1, args.epochs_num + 1)):
         model.train()
         for i, (src_batch, tgt_batch, seg_batch, soft_tgt_batch) in enumerate(batch_loader(batch_size, src, tgt, seg, soft_tgt)):
+            # print("src_batch shape:",src_batch.shape)
+            # print("tgt_batch shape",tgt_batch.shape)
             loss = train_model(args, model, optimizer, scheduler, src_batch, tgt_batch, seg_batch, soft_tgt_batch)
             total_loss += loss.item()
             if (i + 1) % args.report_steps == 0:
