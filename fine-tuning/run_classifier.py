@@ -74,18 +74,6 @@ class Classifier(nn.Module):
             #return temp_output, logits
 
 
-def count_labels_num(path):
-    labels_set, columns = set(), {}
-    with open(path, mode="r", encoding="utf-8") as f:
-        for line_id, line in enumerate(f):
-            if line_id == 0:
-                for i, column_name in enumerate(line.strip().split("\t")):
-                    columns[column_name] = i
-                continue
-            line = line.strip().split("\t")
-            label = int(line[columns["label"]])
-            labels_set.add(label)
-    return len(labels_set)
 
 
 def load_or_initialize_parameters(args, model):
@@ -143,7 +131,7 @@ def batch_loader(batch_size, src, tgt, seg, soft_tgt=None):
 
 
 def read_dataset(args, path):
-    dataset, columns = [], {}
+    train_dataset, test_dataset = [],[]
     datafile = current_dir+'/../datasets/Rimmer/tor_100w_2500tr.npz'
     with np.load(datafile, allow_pickle=True) as npzdata:
         data = npzdata['data']
@@ -156,10 +144,11 @@ def read_dataset(args, path):
         y[np.where(labels == w)] = np.where(websites == w)[0][0]
 
     X_train, X_, y_train, y_ = train_test_split(data, y,
-                                    test_size=0.99,
+                                    test_size=0.9,
                                     random_state=0,
                                     stratify=y)
     X_train = X_train[:, :300]
+    X_ = X_[:,:300]
     
     count = 0
     for text_a in X_train:
@@ -173,11 +162,25 @@ def read_dataset(args, path):
         while len(src_a) < args.seq_length:
             src_a.append(0)
             seg.append(0)
-        dataset.append((src_a, int(y_train[count]), seg))
+        train_dataset.append((src_a, int(y_train[count]), seg))
+        count += 1
+    
+    count = 0
+    for text_a in X_:
+        text_a = " ".join(map(str,text_a))
+        src_a = args.tokenizer.convert_tokens_to_ids([CLS_TOKEN] + args.tokenizer.tokenize(text_a))
+        seg = [1] * len(src_a)
+        if len(src_a) > args.seq_length:
+            src_a = src_a[: args.seq_length]
+            seg = seg[: args.seq_length]
+        while len(src_a) < args.seq_length:
+            src_a.append(0)
+            seg.append(0)
+        test_dataset.append((src_a, int(y_[count]), seg))
         count += 1
 
 
-    return dataset
+    return train_dataset,test_dataset
 
 
 def train_model(args, model, optimizer, scheduler, src_batch, tgt_batch, seg_batch, soft_tgt_batch=None):
@@ -280,7 +283,8 @@ def main():
     set_seed(args.seed)
 
     # Count the number of labels.
-    args.labels_num = count_labels_num(args.train_path)
+    # args.labels_num = count_labels_num(args.train_path)
+    args.labels_num = 100
 
     # Build tokenizer.
     args.tokenizer = str2tokenizer[args.tokenizer](args)
@@ -296,7 +300,7 @@ def main():
     model = model.to(args.device)
 
     # Training phase.
-    trainset = read_dataset(args, args.train_path)
+    trainset,testset = read_dataset(args, args.train_path)
     random.shuffle(trainset)
     instances_num = len(trainset)
     batch_size = args.batch_size
@@ -344,19 +348,19 @@ def main():
                 print("Epoch id: {}, Training steps: {}, Avg loss: {:.3f}".format(epoch, i + 1, total_loss / args.report_steps))
                 total_loss = 0.0
 
-        result = evaluate(args, read_dataset(args, args.dev_path))
+        result = evaluate(args, testset)
         if result[0] > best_result:
             best_result = result[0]
             save_model(model, args.output_model_path)
 
-    # Evaluation phase.
-    if args.test_path is not None:
-        print("Test set evaluation.")
-        if torch.cuda.device_count() > 1:
-            model.module.load_state_dict(torch.load(args.output_model_path))
-        else:
-            model.load_state_dict(torch.load(args.output_model_path))
-        evaluate(args, read_dataset(args, args.test_path), True)
+    # # Evaluation phase.
+    # if args.test_path is not None:
+    #     print("Test set evaluation.")
+    #     if torch.cuda.device_count() > 1:
+    #         model.module.load_state_dict(torch.load(args.output_model_path))
+    #     else:
+    #         model.load_state_dict(torch.load(args.output_model_path))
+    #     evaluate(args, read_dataset(args, args.test_path), True)
 
 
 if __name__ == "__main__":
