@@ -73,18 +73,20 @@ class WordPosSegEmbedding(nn.Module):
             self.layer_norm = LayerNorm(args.emb_size)
     
     def convert(self,src):
-        result = src.view(-1,39).sum(1)
+        # print(src.shape)
+        result = src.view(src.shape[0],-1,39).sum(2)
         return result
 
     def forward(self, src, seg):
-        src = src.float()
+        # src = src.float()
         src = self.convert(src)
+        
         # print("src max:", src.max().item())
         # print("src min:", src.min().item())
         # print(src.shape)
         # src = (src-src.min())/(src.max()-src.min())
         # src = src*(60004)
-        print(src)
+        # print(src.shape)
         src = torch.clamp(src, min=0, max=60004)
         # print(src)
         src = src.long()

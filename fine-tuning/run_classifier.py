@@ -208,7 +208,7 @@ def evaluate(args, dataset, print_confusion_matrix=False):
         for j in range(pred.size()[0]):
             confusion[pred[j], gold[j]] += 1
         correct += torch.sum(pred == gold).item()
-        print(torch.sum(pred == gold).item())
+        # print(torch.sum(pred == gold).item())
 
     if print_confusion_matrix:
         print("Confusion matrix:")
