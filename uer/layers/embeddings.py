@@ -62,6 +62,7 @@ class WordPosSegEmbedding(nn.Module):
     """
     def __init__(self, args, vocab_size):
         super(WordPosSegEmbedding, self).__init__()
+        self.convert = nn.Linear(in_features=5000,out_features=128)
         self.remove_embedding_layernorm = args.remove_embedding_layernorm
         self.dropout = nn.Dropout(args.dropout)
         self.max_seq_length = args.max_seq_length
@@ -72,6 +73,10 @@ class WordPosSegEmbedding(nn.Module):
             self.layer_norm = LayerNorm(args.emb_size)
 
     def forward(self, src, seg):
+        src = src.float()
+        src = self.convert(src)
+        print(src.shape)
+        src = src.long()
         word_emb = self.word_embedding(src)
         pos_emb = self.position_embedding(
             torch.arange(0, word_emb.size(1), device=word_emb.device, dtype=torch.long)

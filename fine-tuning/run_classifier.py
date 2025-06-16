@@ -30,6 +30,7 @@ print("Current working directory:", current_dir)
 class Classifier(nn.Module):
     def __init__(self, args):
         super(Classifier, self).__init__()
+        self.convert = nn.Embedding(num_embeddings=10, embedding_dim=5)
         self.embedding = str2embedding[args.embedding](args, len(args.tokenizer.vocab))
         self.encoder = str2encoder[args.encoder](args)
         self.labels_num = args.labels_num
@@ -47,6 +48,7 @@ class Classifier(nn.Module):
             seg: [batch_size x seq_length]
         """
         # Embedding.
+        # print(src.shape)
         emb = self.embedding(src, seg)
         # Encoder.
         output = self.encoder(emb, seg)
@@ -147,40 +149,13 @@ def read_dataset(args, path):
                                     test_size=0.9,
                                     random_state=0,
                                     stratify=y)
-    X_train = X_train[:, :300]
-    X_ = X_[:,:300]
+    X_train = torch.LongTensor((X_train[:, :5000]+1)/2)
+    X_ = torch.LongTensor((X_[:,:5000]+1)/2)
     
-    count = 0
-    for text_a in X_train:
-        # pdb.set_trace()
-        text_a = " ".join(map(str,text_a))
-        src_a = args.tokenizer.convert_tokens_to_ids([CLS_TOKEN] + args.tokenizer.tokenize(text_a))
-        seg = [1] * len(src_a)
-        if len(src_a) > args.seq_length:
-            src_a = src_a[: args.seq_length]
-            seg = seg[: args.seq_length]
-        while len(src_a) < args.seq_length:
-            src_a.append(0)
-            seg.append(0)
-        train_dataset.append((src_a, int(y_train[count]), seg))
-        count += 1
-    
-    count = 0
-    for text_a in X_:
-        text_a = " ".join(map(str,text_a))
-        src_a = args.tokenizer.convert_tokens_to_ids([CLS_TOKEN] + args.tokenizer.tokenize(text_a))
-        seg = [1] * len(src_a)
-        if len(src_a) > args.seq_length:
-            src_a = src_a[: args.seq_length]
-            seg = seg[: args.seq_length]
-        while len(src_a) < args.seq_length:
-            src_a.append(0)
-            seg.append(0)
-        test_dataset.append((src_a, int(y_[count]), seg))
-        count += 1
+    seg1 = np.ones((len(X_train),args.seq_length),dtype=np.int32)
+    seg2 = np.ones((len(X_),args.seq_length),dtype=np.int32)
 
-
-    return train_dataset,test_dataset
+    return X_train,y_train,seg1,X_,y_,seg2
 
 
 def train_model(args, model, optimizer, scheduler, src_batch, tgt_batch, seg_batch, soft_tgt_batch=None):
@@ -209,9 +184,9 @@ def train_model(args, model, optimizer, scheduler, src_batch, tgt_batch, seg_bat
 
 
 def evaluate(args, dataset, print_confusion_matrix=False):
-    src = torch.LongTensor([sample[0] for sample in dataset])
-    tgt = torch.LongTensor([sample[1] for sample in dataset])
-    seg = torch.LongTensor([sample[2] for sample in dataset])
+    src = torch.LongTensor(dataset[0])
+    tgt = torch.LongTensor(dataset[1])
+    seg = torch.LongTensor(dataset[2])
 
     batch_size = args.batch_size
 
@@ -300,19 +275,20 @@ def main():
     model = model.to(args.device)
 
     # Training phase.
-    trainset,testset = read_dataset(args, args.train_path)
-    random.shuffle(trainset)
-    instances_num = len(trainset)
+    src,tgt,seg,src_t,tgt_t,seg_t = read_dataset(args, args.train_path)
+
     batch_size = args.batch_size
     
-    src = torch.LongTensor([example[0] for example in trainset])
-    tgt = torch.LongTensor([example[1] for example in trainset])
-    seg = torch.LongTensor([example[2] for example in trainset])
+    src = torch.LongTensor(src)
+    tgt = np.array(tgt,dtype=np.int32)
+    tgt = torch.LongTensor(tgt)
+    seg = torch.LongTensor(seg)
+  
+    instances_num = len(src)
     if args.soft_targets:
         soft_tgt = torch.FloatTensor([example[3] for example in trainset])
     else:
         soft_tgt = None
-
     args.train_steps = int(instances_num * args.epochs_num / batch_size) + 1
 
     print("Batch size: ", batch_size)
@@ -348,7 +324,7 @@ def main():
                 print("Epoch id: {}, Training steps: {}, Avg loss: {:.3f}".format(epoch, i + 1, total_loss / args.report_steps))
                 total_loss = 0.0
 
-        result = evaluate(args, testset)
+        result = evaluate(args,(src_t,tgt_t,seg_t) )
         if result[0] > best_result:
             best_result = result[0]
             save_model(model, args.output_model_path)
