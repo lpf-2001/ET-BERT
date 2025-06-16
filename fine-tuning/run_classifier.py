@@ -149,8 +149,8 @@ def read_dataset(args, path):
                                     test_size=0.9,
                                     random_state=0,
                                     stratify=y)
-    X_train = torch.LongTensor((X_train[:, :5000]+1)/2)
-    X_ = torch.LongTensor((X_[:,:5000]+1)/2)
+    X_train = torch.LongTensor((X_train[:, :4992]+1)/2)
+    X_ = torch.LongTensor((X_[:,:4992]+1)/2)
     
     seg1 = np.ones((len(X_train),args.seq_length),dtype=np.int32)
     seg2 = np.ones((len(X_),args.seq_length),dtype=np.int32)
@@ -185,7 +185,8 @@ def train_model(args, model, optimizer, scheduler, src_batch, tgt_batch, seg_bat
 
 def evaluate(args, dataset, print_confusion_matrix=False):
     src = torch.LongTensor(dataset[0])
-    tgt = torch.LongTensor(dataset[1])
+    tgt = np.array(dataset[1],dtype=np.int32)
+    tgt = torch.LongTensor(tgt)
     seg = torch.LongTensor(dataset[2])
 
     batch_size = args.batch_size
@@ -207,6 +208,7 @@ def evaluate(args, dataset, print_confusion_matrix=False):
         for j in range(pred.size()[0]):
             confusion[pred[j], gold[j]] += 1
         correct += torch.sum(pred == gold).item()
+        print(torch.sum(pred == gold).item())
 
     if print_confusion_matrix:
         print("Confusion matrix:")
@@ -226,7 +228,7 @@ def evaluate(args, dataset, print_confusion_matrix=False):
                 f1 = 2 * p * r / (p + r)
             print("Label {}: {:.3f}, {:.3f}, {:.3f}".format(i, p, r, f1))
 
-    print("Acc. (Correct/Total): {:.4f} ({}/{}) ".format(correct / len(dataset), correct, len(dataset)))
+    print("Acc. (Correct/Total): {:.4f} ({}/{}) ".format(correct / len(dataset[0]), correct, len(dataset[0])))
     return correct / len(dataset), confusion
 
 

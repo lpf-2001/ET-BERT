@@ -62,7 +62,7 @@ class WordPosSegEmbedding(nn.Module):
     """
     def __init__(self, args, vocab_size):
         super(WordPosSegEmbedding, self).__init__()
-        self.convert = nn.Linear(in_features=5000,out_features=128)
+        # self.convert = nn.Linear(in_features=128,out_features=128)
         self.remove_embedding_layernorm = args.remove_embedding_layernorm
         self.dropout = nn.Dropout(args.dropout)
         self.max_seq_length = args.max_seq_length
@@ -71,13 +71,25 @@ class WordPosSegEmbedding(nn.Module):
         self.segment_embedding = nn.Embedding(3, args.emb_size)
         if not self.remove_embedding_layernorm:
             self.layer_norm = LayerNorm(args.emb_size)
+    
+    def convert(self,src):
+        result = src.view(-1,39).sum(1)
+        return result
 
     def forward(self, src, seg):
         src = src.float()
         src = self.convert(src)
-        print(src.shape)
+        # print("src max:", src.max().item())
+        # print("src min:", src.min().item())
+        # print(src.shape)
+        # src = (src-src.min())/(src.max()-src.min())
+        # src = src*(60004)
+        print(src)
+        src = torch.clamp(src, min=0, max=60004)
+        # print(src)
         src = src.long()
         word_emb = self.word_embedding(src)
+        # print(word_emb.shape)
         pos_emb = self.position_embedding(
             torch.arange(0, word_emb.size(1), device=word_emb.device, dtype=torch.long)
             .unsqueeze(0)
@@ -87,6 +99,7 @@ class WordPosSegEmbedding(nn.Module):
 
         emb = word_emb + pos_emb + seg_emb
         if not self.remove_embedding_layernorm:
+            # print(emb)
             emb = self.layer_norm(emb)
         emb = self.dropout(emb)
         return emb
