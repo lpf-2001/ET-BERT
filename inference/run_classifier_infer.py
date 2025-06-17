@@ -7,6 +7,7 @@ import torch
 import argparse
 import collections
 import torch.nn as nn
+import numpy as np
 
 uer_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(uer_dir)
@@ -17,8 +18,10 @@ from uer.utils.config import load_hyperparam
 from uer.utils.seed import set_seed
 from uer.model_loader import load_model
 from uer.opts import infer_opts
-from run_classifier import Classifier
+from fine_tuning.run_classifier import Classifier
+from sklearn.model_selection import train_test_split
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
 
 def batch_loader(batch_size, src, seg):
     instances_num = src.size()[0]
@@ -31,37 +34,30 @@ def batch_loader(batch_size, src, seg):
         seg_batch = seg[instances_num // batch_size * batch_size :, :]
         yield src_batch, seg_batch
 
-
 def read_dataset(args, path):
-    dataset, columns = [], {}
-    with open(path, mode="r", encoding="utf-8") as f:
-        for line_id, line in enumerate(f):
-            if line_id == 0:
-                line = line.strip().split("\t")
-                for i, column_name in enumerate(line):
-                    columns[column_name] = i
-                continue
-            line = line.strip().split("\t")
-            if "text_b" not in columns:  # Sentence classification.
-                text_a = line[columns["text_a"]]
-                src = args.tokenizer.convert_tokens_to_ids([CLS_TOKEN] + args.tokenizer.tokenize(text_a))
-                seg = [1] * len(src)
-            else:  # Sentence pair classification.
-                text_a, text_b = line[columns["text_a"]], line[columns["text_b"]]
-                src_a = args.tokenizer.convert_tokens_to_ids([CLS_TOKEN] + args.tokenizer.tokenize(text_a) + [SEP_TOKEN])
-                src_b = args.tokenizer.convert_tokens_to_ids(args.tokenizer.tokenize(text_b) + [SEP_TOKEN])
-                src = src_a + src_b
-                seg = [1] * len(src_a) + [2] * len(src_b)
-            
-            if len(src) > args.seq_length:
-                src = src[: args.seq_length]
-                seg = seg[: args.seq_length]
-            while len(src) < args.seq_length:
-                src.append(0)
-                seg.append(0)
-            dataset.append((src, seg))
+    train_dataset, test_dataset = [],[]
+    datafile = current_dir+'/../datasets/Rimmer/tor_100w_2500tr.npz'
+    with np.load(datafile, allow_pickle=True) as npzdata:
+        data = npzdata['data']
+        labels = npzdata['labels']
 
-    return dataset
+    # Convert website to integer
+    y = labels.copy()
+    websites = np.unique(labels)
+    for w in websites:
+        y[np.where(labels == w)] = np.where(websites == w)[0][0]
+
+    X_train, X_, y_train, y_ = train_test_split(data, y,
+                                    test_size=0.9,
+                                    random_state=0,
+                                    stratify=y)
+    X_train = torch.LongTensor((X_train[:, :4992]+1)/2)
+    X_ = torch.LongTensor((X_[:,:4992]+1)/2)
+    
+    seg1 = np.ones((len(X_train),args.seq_length),dtype=np.int32)
+    seg2 = np.ones((len(X_),args.seq_length),dtype=np.int32)
+
+    return X_train,y_train,seg1,X_,y_,seg2
 
 
 def main():
@@ -105,10 +101,12 @@ def main():
         print("{} GPUs are available. Let's use them.".format(torch.cuda.device_count()))
         model = torch.nn.DataParallel(model)
 
-    dataset = read_dataset(args, args.test_path)
+    src,tgt,seg,src_t,tgt_t,seg_t = read_dataset(args, args.test_path)
 
-    src = torch.LongTensor([sample[0] for sample in dataset])
-    seg = torch.LongTensor([sample[1] for sample in dataset])
+    src_t = torch.LongTensor(src_t)
+    tgt_t = np.array(tgt_t,dtype=np.int32)
+    tgt_t = torch.LongTensor(tgt_t)
+    seg_t = torch.LongTensor(seg_t)
 
     batch_size = args.batch_size
     instances_num = src.size()[0]
@@ -124,7 +122,7 @@ def main():
         if args.output_prob:
             f.write("\t" + "prob")
         f.write("\n")
-        for i, (src_batch, seg_batch) in enumerate(batch_loader(batch_size, src, seg)):
+        for i, (src_batch, seg_batch) in enumerate(batch_loader(batch_size, src_t, seg_t)):
             src_batch = src_batch.to(device)
             seg_batch = seg_batch.to(device)
             with torch.no_grad():
