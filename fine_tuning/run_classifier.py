@@ -6,6 +6,7 @@ import argparse
 import torch
 import torch.nn as nn
 import pdb
+import pickle
 import sys
 import os
 # 获取项目根目录（ET-BERT），并添加到sys.path
@@ -20,6 +21,7 @@ from uer.utils.config import load_hyperparam
 from uer.utils.seed import set_seed
 from uer.model_saver import save_model
 from uer.opts import finetune_opts
+from collections import Counter
 import tqdm
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -130,6 +132,43 @@ def batch_loader(batch_size, src, tgt, seg, soft_tgt=None):
             yield src_batch, tgt_batch, seg_batch, soft_tgt_batch
         else:
             yield src_batch, tgt_batch, seg_batch, None
+
+
+
+def read_sirinam(args, path):
+    train_dataset, test_dataset = [],[]
+    dataset_dir = current_dir+'/../datasets/Sirinam/'
+    with open(dataset_dir + 'X_train_NoDef.pkl', 'rb') as handle:     
+        X_train = np.array(pickle.load(handle , encoding='bytes'))
+    with open(dataset_dir + 'y_train_NoDef.pkl', 'rb') as handle:
+        y_train = np.array(pickle.load(handle, encoding='bytes'))
+
+    # Load validation data
+    with open(dataset_dir + 'X_valid_NoDef.pkl', 'rb') as handle:
+        X_valid = np.array(pickle.load(handle, encoding='bytes'))
+    with open(dataset_dir + 'y_valid_NoDef.pkl', 'rb') as handle:
+        y_valid = np.array(pickle.load(handle, encoding='bytes'))
+
+    # Load testing data
+    with open(dataset_dir + 'X_test_NoDef.pkl', 'rb') as handle:
+        X_test = np.array(pickle.load(handle, encoding='bytes'))
+    with open(dataset_dir + 'y_test_NoDef.pkl', 'rb') as handle:
+        y_test = np.array(pickle.load(handle, encoding='bytes'))
+        
+    all_x = np.concatenate((X_train,X_valid,X_test),axis=0)
+    all_y = np.concatenate((y_train,y_valid,y_test),axis=0)
+    category_count = Counter(all_y)
+    X_train, X_, y_train, y_ = train_test_split(all_x, all_y,
+                                    test_size=0.9,
+                                    random_state=0,
+                                    stratify=all_y)
+    X_train = torch.LongTensor((X_train[:, :4992]+1)/2)
+    X_ = torch.LongTensor((X_[:,:4992]+1)/2)
+    seg1 = np.ones((len(X_train),args.seq_length),dtype=np.int32)
+    seg2 = np.ones((len(X_),args.seq_length),dtype=np.int32)
+    
+    
+    return X_train,y_train,seg1,X_,y_,seg2
 
 
 def read_dataset(args, path):
@@ -261,7 +300,7 @@ def main():
 
     # Count the number of labels.
     # args.labels_num = count_labels_num(args.train_path)
-    args.labels_num = 100
+    args.labels_num = 95
 
     # Build tokenizer.
     args.tokenizer = str2tokenizer[args.tokenizer](args)
@@ -277,8 +316,8 @@ def main():
     model = model.to(args.device)
 
     # Training phase.
-    src,tgt,seg,src_t,tgt_t,seg_t = read_dataset(args, args.train_path)
-
+    src,tgt,seg,src_t,tgt_t,seg_t = read_sirinam(args, args.train_path)
+    # src,tgt,seg,src_t,tgt_t,seg_t = read_dataset(args, args.train_path)
     batch_size = args.batch_size
     
     src = torch.LongTensor(src)
@@ -338,7 +377,7 @@ def main():
     #         model.module.load_state_dict(torch.load(args.output_model_path))
     #     else:
     #         model.load_state_dict(torch.load(args.output_model_path))
-    #     evaluate(args, read_dataset(args, args.test_path), True)
+    #     evaluate(args, read_sirinam(args, args.test_path), True)
 
 
 if __name__ == "__main__":
