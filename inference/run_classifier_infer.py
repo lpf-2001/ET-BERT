@@ -3,12 +3,10 @@
 """
 import sys
 import os
-import torch
 import argparse
-import collections
 import torch.nn as nn
 import numpy as np
-
+import torch
 uer_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(uer_dir)
 
@@ -18,10 +16,12 @@ from uer.utils.config import load_hyperparam
 from uer.utils.seed import set_seed
 from uer.model_loader import load_model
 from uer.opts import infer_opts
+from datasets.data import read_dataset
 from fine_tuning.run_classifier import Classifier
 from sklearn.model_selection import train_test_split
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
+print("run_classifier_infer.py working directory:", current_dir)
 
 def batch_loader(batch_size, src, seg):
     instances_num = src.size()[0]
@@ -33,31 +33,6 @@ def batch_loader(batch_size, src, seg):
         src_batch = src[instances_num // batch_size * batch_size :, :]
         seg_batch = seg[instances_num // batch_size * batch_size :, :]
         yield src_batch, seg_batch
-
-def read_dataset(args, path):
-    train_dataset, test_dataset = [],[]
-    datafile = current_dir+'/../datasets/Rimmer/tor_100w_2500tr.npz'
-    with np.load(datafile, allow_pickle=True) as npzdata:
-        data = npzdata['data']
-        labels = npzdata['labels']
-
-    # Convert website to integer
-    y = labels.copy()
-    websites = np.unique(labels)
-    for w in websites:
-        y[np.where(labels == w)] = np.where(websites == w)[0][0]
-
-    X_train, X_, y_train, y_ = train_test_split(data, y,
-                                    test_size=0.9,
-                                    random_state=0,
-                                    stratify=y)
-    X_train = torch.LongTensor((X_train[:, :4992]+1)/2)
-    X_ = torch.LongTensor((X_[:,:4992]+1)/2)
-    
-    seg1 = np.ones((len(X_train),args.seq_length),dtype=np.int32)
-    seg2 = np.ones((len(X_),args.seq_length),dtype=np.int32)
-
-    return X_train,y_train,seg1,X_,y_,seg2
 
 
 def main():
@@ -101,7 +76,7 @@ def main():
         print("{} GPUs are available. Let's use them.".format(torch.cuda.device_count()))
         model = torch.nn.DataParallel(model)
 
-    src,tgt,seg,src_t,tgt_t,seg_t = read_dataset(args, args.test_path)
+    src,tgt,seg,src_t,tgt_t,seg_t = read_dataset(args, "Rimmer")
 
     src_t = torch.LongTensor(src_t)
     tgt_t = np.array(tgt_t,dtype=np.int32)

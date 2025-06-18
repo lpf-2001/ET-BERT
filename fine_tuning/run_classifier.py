@@ -27,7 +27,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-print("fine_tuning/run_classification.py working directory:", current_dir)
+print("run_classification.py working directory:", current_dir)
 
 class Classifier(nn.Module):
     def __init__(self, args):
@@ -259,7 +259,7 @@ def main():
     model = model.to(args.device)
 
     # Training phase.
-    src,tgt,seg,src_t,tgt_t,seg_t = read_dataset(args, "Rimmer")
+    src,tgt,seg,src_t,tgt_t,seg_t = read_dataset(args, "Sirinam")
     batch_size = args.batch_size
     
     src = torch.LongTensor(src)
