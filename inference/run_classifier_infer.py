@@ -7,6 +7,7 @@ import argparse
 import torch.nn as nn
 import numpy as np
 import torch
+
 uer_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(uer_dir)
 
@@ -23,16 +24,18 @@ from sklearn.model_selection import train_test_split
 current_dir = os.path.dirname(os.path.abspath(__file__))
 print("run_classifier_infer.py working directory:", current_dir)
 
-def batch_loader(batch_size, src, seg):
+def batch_loader(batch_size, src, seg, tgt):
     instances_num = src.size()[0]
     for i in range(instances_num // batch_size):
         src_batch = src[i * batch_size : (i + 1) * batch_size, :]
         seg_batch = seg[i * batch_size : (i + 1) * batch_size, :]
-        yield src_batch, seg_batch
+        tgt_batch = tgt[i * batch_size : (i + 1) * batch_size]
+        yield src_batch, seg_batch, tgt_batch
     if instances_num > instances_num // batch_size * batch_size:
         src_batch = src[instances_num // batch_size * batch_size :, :]
         seg_batch = seg[instances_num // batch_size * batch_size :, :]
-        yield src_batch, seg_batch
+        tgt_batch = tgt[instances_num // batch_size * batch_size :]
+        yield src_batch, seg_batch, tgt_batch
 
 
 def main():
@@ -84,11 +87,13 @@ def main():
     seg_t = torch.LongTensor(seg_t)
 
     batch_size = args.batch_size
-    instances_num = src.size()[0]
+    instances_num = src_t.size()[0]
 
     print("The number of prediction instances: ", instances_num)
 
     model.eval()
+    
+    correct = 0
 
     with open(args.prediction_path, mode="w", encoding="utf-8") as f:
         f.write("label")
@@ -97,13 +102,15 @@ def main():
         if args.output_prob:
             f.write("\t" + "prob")
         f.write("\n")
-        for i, (src_batch, seg_batch) in enumerate(batch_loader(batch_size, src_t, seg_t)):
+        for i, (src_batch, seg_batch, tgt_batch) in enumerate(batch_loader(batch_size, src_t, seg_t, tgt_t)):
             src_batch = src_batch.to(device)
             seg_batch = seg_batch.to(device)
+            tgt_batch = tgt_batch.to(device)
             with torch.no_grad():
                 _, logits = model(src_batch, None, seg_batch)
             
             pred = torch.argmax(logits, dim=1)
+            correct = correct+(pred==tgt_batch).sum().item()
             pred = pred.cpu().numpy().tolist()
             prob = nn.Softmax(dim=1)(logits)
             logits = logits.cpu().numpy().tolist()
@@ -117,6 +124,6 @@ def main():
                     f.write("\t" + " ".join([str(v) for v in prob[j]]))
                 f.write("\n")
 
-
+        print(correct/src_t.shape[0])
 if __name__ == "__main__":
     main()

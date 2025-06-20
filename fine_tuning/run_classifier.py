@@ -3,9 +3,7 @@ This script provides an exmaple to wrap UER-py for classification.
 """
 
 import argparse
-
 import torch.nn as nn
-
 import sys
 import os
 # 获取项目根目录（ET-BERT），并添加到sys.path
