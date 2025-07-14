@@ -25,6 +25,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 print("run_classifier_infer.py working directory:", current_dir)
 
 def batch_loader(batch_size, src, seg, tgt):
+    print(tgt.shape)
     instances_num = src.size()[0]
     for i in range(instances_num // batch_size):
         src_batch = src[i * batch_size : (i + 1) * batch_size, :]
@@ -87,13 +88,11 @@ def main():
     seg_t = torch.LongTensor(seg_t)
 
     batch_size = args.batch_size
-    instances_num = src_t.size()[0]
+    instances_num = src_t.shape[0]
 
     print("The number of prediction instances: ", instances_num)
 
     model.eval()
-    
-    correct = 0
 
     with open(args.prediction_path, mode="w", encoding="utf-8") as f:
         f.write("label")
@@ -102,6 +101,7 @@ def main():
         if args.output_prob:
             f.write("\t" + "prob")
         f.write("\n")
+        correct = 0
         for i, (src_batch, seg_batch, tgt_batch) in enumerate(batch_loader(batch_size, src_t, seg_t, tgt_t)):
             src_batch = src_batch.to(device)
             seg_batch = seg_batch.to(device)
@@ -110,20 +110,23 @@ def main():
                 _, logits = model(src_batch, None, seg_batch)
             
             pred = torch.argmax(logits, dim=1)
+            # print(pred[:10])
             correct = correct+(pred==tgt_batch).sum().item()
-            pred = pred.cpu().numpy().tolist()
-            prob = nn.Softmax(dim=1)(logits)
-            logits = logits.cpu().numpy().tolist()
-            prob = prob.cpu().numpy().tolist()
+            # print(correct)
+            prob = pred.cpu().numpy().tolist()
+            true = tgt_batch.cpu().numpy().tolist()
+            f.write("-------pred&true------")
+            f.write('\n')
+            f.write(str(prob))
+            f.write('\n')
+            f.write(str(true))
+            f.write('\n')
+            f.write(str(correct))
+            f.write('\n')
             
-            for j in range(len(pred)):
-                f.write(str(pred[j]))
-                if args.output_logits:
-                    f.write("\t" + " ".join([str(v) for v in logits[j]]))
-                if args.output_prob:
-                    f.write("\t" + " ".join([str(v) for v in prob[j]]))
-                f.write("\n")
+        print(correct/instances_num)
+            
 
-        print(correct/src_t.shape[0])
+
 if __name__ == "__main__":
     main()

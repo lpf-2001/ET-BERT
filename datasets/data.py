@@ -45,9 +45,9 @@ def read_dataset(args, type_="Rimmer"):
             y[np.where(labels == w)] = np.where(websites == w)[0][0]
 
     X_train, X_, y_train, y_ = train_test_split(data, y, test_size=0.9,random_state=0,stratify=y)
-    
-    X_train = (X_train[:, :4992]+1)/2
-    X_ = (X_[:,:4992]+1)/2
+    print(X_train.shape)
+    X_train = (X_train[:, :5000]+1)/2
+    X_ = (X_[:,:5000]+1)/2
     
     seg1 = np.ones((len(X_train),args.seq_length),dtype=np.int32)
     seg2 = np.ones((len(X_),args.seq_length),dtype=np.int32)

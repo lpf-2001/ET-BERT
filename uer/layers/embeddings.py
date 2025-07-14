@@ -1,8 +1,9 @@
 import torch
 import math
+import pdb
 import torch.nn as nn
 from uer.layers.layer_norm import LayerNorm
-
+import numpy as np
 
 class WordEmbedding(nn.Module):
     """
@@ -66,45 +67,83 @@ class WordPosSegEmbedding(nn.Module):
         self.remove_embedding_layernorm = args.remove_embedding_layernorm
         self.dropout = nn.Dropout(args.dropout)
         self.max_seq_length = args.max_seq_length
+        print("vocab_size:",vocab_size,"args.emb_size:",args.emb_size)
         self.word_embedding = nn.Embedding(vocab_size, args.emb_size)
         self.position_embedding = nn.Embedding(self.max_seq_length, args.emb_size)
         self.segment_embedding = nn.Embedding(3, args.emb_size)
+        
+
+        
+        
         if not self.remove_embedding_layernorm:
             self.layer_norm = LayerNorm(args.emb_size)
     
     def convert(self,src):
         # print(src.shape)
-        result = src.view(src.shape[0],-1,39).sum(2)
-        return result
+        result1 = src.view(src.shape[0],-1,10).sum(2)
+        result2 = src.view(src.shape[0],-1,20).sum(2)
+        result3 = src.view(src.shape[0],-1,40).sum(2)
+        return result1,result2,result3
 
     def forward(self, src, seg):
         # src = src.float()
-        src = self.convert(src)
+        # pdb.set_trace()
         
-        # print("src max:", src.max().item())
-        # print("src min:", src.min().item())
-        # print(src.shape)
-        # src = (src-src.min())/(src.max()-src.min())
-        # src = src*(60004)
-        # print(src.shape)
-        src = torch.clamp(src, min=0, max=60004)
-        # print(src)
-        src = src.long()
-        word_emb = self.word_embedding(src)
-        # print(word_emb.shape)
-        pos_emb = self.position_embedding(
-            torch.arange(0, word_emb.size(1), device=word_emb.device, dtype=torch.long)
-            .unsqueeze(0)
-            .repeat(word_emb.size(0), 1)
-        )
-        seg_emb = self.segment_embedding(seg)
+        src1,src2,src3 = self.convert(src)
+        
 
-        emb = word_emb + pos_emb + seg_emb
+        src1 = torch.clamp(src1, min=0, max=60004)
+        src2 = torch.clamp(src2, min=0, max=60004)
+        src3 = torch.clamp(src3, min=0, max=60004)
+        # print(src)
+        src1 = src1.long()
+        src2 = src2.long()
+        src3 = src3.long()
+        
+        
+        word_emb1 = self.word_embedding(src1)
+        word_emb2 = self.word_embedding(src2)
+        word_emb3 = self.word_embedding(src3)
+      
+        # print(word_emb.shape)
+        pos_emb1 = self.position_embedding(
+            torch.arange(0, word_emb1.size(1), device=word_emb1.device, dtype=torch.long)
+            .unsqueeze(0)
+            .repeat(word_emb1.size(0), 1)
+        )
+        pos_emb2 = self.position_embedding(
+            torch.arange(0, word_emb2.size(1), device=word_emb2.device, dtype=torch.long)
+            .unsqueeze(0)
+            .repeat(word_emb2.size(0), 1)
+        )
+        pos_emb3 = self.position_embedding(
+            torch.arange(0, word_emb3.size(1), device=word_emb3.device, dtype=torch.long)
+            .unsqueeze(0)
+            .repeat(word_emb3.size(0), 1)
+        )
+        seg1 = np.ones((word_emb1.shape[0],src1.shape[1]),dtype=np.int32)
+        seg1 = torch.LongTensor(seg1).to('cuda')
+        seg2 = np.ones((word_emb2.shape[0],src2.shape[1]),dtype=np.int32)
+        seg2 = torch.LongTensor(seg2).to('cuda')
+        seg3 = np.ones((word_emb3.shape[0],src3.shape[1]),dtype=np.int32)
+        seg3 = torch.LongTensor(seg3).to('cuda')
+        seg_emb1 = self.segment_embedding(seg1)
+        seg_emb2 = self.segment_embedding(seg2)
+        seg_emb3 = self.segment_embedding(seg3)
+
+        emb1 = word_emb1 + pos_emb1 + seg_emb1
+        emb2 = word_emb2 + pos_emb2 + seg_emb2
+        emb3 = word_emb3 + pos_emb3 + seg_emb3
+        
         if not self.remove_embedding_layernorm:
             # print(emb)
-            emb = self.layer_norm(emb)
-        emb = self.dropout(emb)
-        return emb
+            emb1 = self.layer_norm(emb1)
+            emb2 = self.layer_norm(emb2)
+            emb3 = self.layer_norm(emb3)
+        emb1 = self.dropout(emb1)
+        emb2 = self.dropout(emb2)
+        emb3 = self.dropout(emb3)
+        return emb1,emb2,emb3
 
 
 class WordSinusoidalposEmbedding(nn.Module):

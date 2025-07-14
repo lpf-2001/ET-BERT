@@ -3,7 +3,9 @@ This script provides an exmaple to wrap UER-py for classification.
 """
 
 import argparse
+
 import torch.nn as nn
+
 import sys
 import os
 # 获取项目根目录（ET-BERT），并添加到sys.path
@@ -22,6 +24,7 @@ from datasets.data import read_dataset
 from collections import Counter
 import tqdm
 import numpy as np
+import pdb
 from sklearn.model_selection import train_test_split
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -39,6 +42,10 @@ class Classifier(nn.Module):
         self.soft_alpha = args.soft_alpha
         self.output_layer_1 = nn.Linear(args.hidden_size, args.hidden_size)
         self.output_layer_2 = nn.Linear(args.hidden_size, self.labels_num)
+        
+        self.temp_layer_1 = nn.Linear(500,128)
+        self.temp_layer_2 = nn.Linear(250,128)
+        self.temp_layer_3 = nn.Linear(125,128)
 
     def forward(self, src, tgt, seg, soft_tgt=None):
         """
@@ -49,10 +56,16 @@ class Classifier(nn.Module):
         """
         # Embedding.
         # print(src.shape)
-        emb = self.embedding(src, seg)
+        emb1,emb2,emb3 = self.embedding(src, seg)
+        emb1 = self.temp_layer_1(emb1.transpose(1,2)).transpose(1,2)
+        emb2 = self.temp_layer_2(emb2.transpose(1,2)).transpose(1,2)
+        emb3 = self.temp_layer_3(emb3.transpose(1,2)).transpose(1,2)
+        # pdb.set_trace()
         # Encoder.
-        output = self.encoder(emb, seg)
-        temp_output = output
+        output = self.encoder(emb1,seg)
+        output2 = self.encoder(emb2,seg)
+        output3 = self.encoder(emb3,seg)
+        output = output+output2+output3
         # Target.
         if self.pooling == "mean":
             output = torch.mean(output, dim=1)
@@ -297,8 +310,7 @@ def main():
     for epoch in tqdm.tqdm(range(1, args.epochs_num + 1)):
         model.train()
         for i, (src_batch, tgt_batch, seg_batch, soft_tgt_batch) in enumerate(batch_loader(batch_size, src, tgt, seg, soft_tgt)):
-            # print("src_batch shape:",src_batch.shape)
-            # print("tgt_batch shape",tgt_batch.shape)
+           
             loss = train_model(args, model, optimizer, scheduler, src_batch, tgt_batch, seg_batch, soft_tgt_batch)
             total_loss += loss.item()
             if (i + 1) % args.report_steps == 0:
@@ -310,14 +322,6 @@ def main():
             best_result = result[0]
             save_model(model, args.output_model_path)
 
-    # # Evaluation phase.
-    # if args.test_path is not None:
-    #     print("Test set evaluation.")
-    #     if torch.cuda.device_count() > 1:
-    #         model.module.load_state_dict(torch.load(args.output_model_path))
-    #     else:
-    #         model.load_state_dict(torch.load(args.output_model_path))
-    #     evaluate(args, read_sirinam(args, args.test_path), True)
 
 
 if __name__ == "__main__":
