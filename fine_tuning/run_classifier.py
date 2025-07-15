@@ -254,7 +254,7 @@ def main():
 
     # Count the number of labels.
     # args.labels_num = count_labels_num(args.train_path)
-    args.labels_num = 95
+    args.labels_num = 100
 
     # Build tokenizer.
     args.tokenizer = str2tokenizer[args.tokenizer](args)
@@ -270,7 +270,7 @@ def main():
     model = model.to(args.device)
 
     # Training phase.
-    src,tgt,seg,src_t,tgt_t,seg_t = read_dataset(args, "Sirinam")
+    src,tgt,seg,src_t,tgt_t,seg_t = read_dataset(args, "Rimmer")
     batch_size = args.batch_size
     
     src = torch.LongTensor(src)
