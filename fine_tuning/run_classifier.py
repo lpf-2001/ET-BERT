@@ -30,63 +30,88 @@ from sklearn.model_selection import train_test_split
 current_dir = os.path.dirname(os.path.abspath(__file__))
 print("run_classification.py working directory:", current_dir)
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 class Classifier(nn.Module):
     def __init__(self, args):
-        super(Classifier, self).__init__()
-        self.convert = nn.Embedding(num_embeddings=10, embedding_dim=5)
+        super().__init__()
+        # 你自己的embedding和encoder初始化方法
         self.embedding = str2embedding[args.embedding](args, len(args.tokenizer.vocab))
         self.encoder = str2encoder[args.encoder](args)
+
         self.labels_num = args.labels_num
         self.pooling = args.pooling
-        self.soft_targets = args.soft_targets
-        self.soft_alpha = args.soft_alpha
-        self.output_layer_1 = nn.Linear(args.hidden_size, args.hidden_size)
-        self.output_layer_2 = nn.Linear(args.hidden_size, self.labels_num)
-        
-        self.temp_layer_1 = nn.Linear(500,128)
-        self.temp_layer_2 = nn.Linear(250,128)
-        self.temp_layer_3 = nn.Linear(125,128)
+
+        hidden_size = args.hidden_size  # 768等
+        target_length = args.seq_length              # 统一序列长度
+
+        # 多尺度卷积 + 自适应池化
+        self.conv = nn.Conv1d(hidden_size, hidden_size, kernel_size=3, padding=1)
+        self.pool = nn.AdaptiveAvgPool1d(target_length)
+
+        self.output_layer_1 = nn.Linear(hidden_size, hidden_size)
+        self.output_layer_2 = nn.Linear(hidden_size, self.labels_num)
+        self.dropout = nn.Dropout(0.2)
+
+    def process_emb(self, emb):
+        # emb: [B, L, H] -> Conv1d expects [B, H, L]
+        x = emb.transpose(1, 2)   # [B, H, L]
+        x = self.conv(x)          # 卷积，长度L不变
+        x = self.pool(x)          # 池化，长度变成 target_length
+        x = x.transpose(1, 2)     # [B, target_length, H]
+        return x
+
+    def resize_seg(self, seg, target_length):
+        # 简单线性插值调整seg长度
+        # seg: [B, L], dtype long
+        seg = seg.unsqueeze(1).float()  # [B,1,L]
+        seg = F.interpolate(seg, size=target_length, mode='nearest')
+        seg = seg.squeeze(1).long()     # [B, target_length]
+        return seg
 
     def forward(self, src, tgt, seg, soft_tgt=None):
-        """
-        Args:
-            src: [batch_size x seq_length]
-            tgt: [batch_size]
-            seg: [batch_size x seq_length]
-        """
-        # Embedding.
-        # print(src.shape)
-        emb1,emb2,emb3 = self.embedding(src, seg)
-        emb1 = self.temp_layer_1(emb1.transpose(1,2)).transpose(1,2)
-        emb2 = self.temp_layer_2(emb2.transpose(1,2)).transpose(1,2)
-        emb3 = self.temp_layer_3(emb3.transpose(1,2)).transpose(1,2)
-        # pdb.set_trace()
-        # Encoder.
-        output = self.encoder(emb1,seg)
-        output2 = self.encoder(emb2,seg)
-        output3 = self.encoder(emb3,seg)
-        output = output+output2+output3
-        # Target.
+        # src: [B, L], seg: [B, L]
+        emb1, emb2, emb3 = self.embedding(src, seg)  # 多尺度输出，每个是 [B, L_i, H]
+
+        # 卷积 + 池化统一长度128
+        emb1 = self.process_emb(emb1)
+        emb2 = self.process_emb(emb2)
+        emb3 = self.process_emb(emb3)
+
+        # seg 同步调整长度
+        seg_resized = self.resize_seg(seg, emb1.size(1))
+
+        # 编码
+        out1 = self.encoder(emb1, seg_resized)
+        out2 = self.encoder(emb2, seg_resized)
+        out3 = self.encoder(emb3, seg_resized)
+
+        # 融合三路输出
+        output = (out1 + out2 + out3) / 3
+        output = self.dropout(output)
+
+        # 池化
         if self.pooling == "mean":
-            output = torch.mean(output, dim=1)
+            output = output.mean(dim=1)
         elif self.pooling == "max":
-            output = torch.max(output, dim=1)[0]
+            output, _ = output.max(dim=1)
         elif self.pooling == "last":
             output = output[:, -1, :]
         else:
             output = output[:, 0, :]
+
         output = torch.tanh(self.output_layer_1(output))
         logits = self.output_layer_2(output)
-        if tgt is not None:
-            if self.soft_targets and soft_tgt is not None:
-                loss = self.soft_alpha * nn.MSELoss()(logits, soft_tgt) + \
-                       (1 - self.soft_alpha) * nn.NLLLoss()(nn.LogSoftmax(dim=-1)(logits), tgt.view(-1))
-            else:
-                loss = nn.NLLLoss()(nn.LogSoftmax(dim=-1)(logits), tgt.view(-1))
-            return loss, logits
-        else:
+
+        if tgt is None:
             return None, logits
-            #return temp_output, logits
+        else:
+            loss = nn.CrossEntropyLoss()(logits, tgt.view(-1))
+            return loss, logits
+
+
 
 
 

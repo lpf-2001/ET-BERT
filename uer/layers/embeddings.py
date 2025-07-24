@@ -71,6 +71,7 @@ class WordPosSegEmbedding(nn.Module):
         self.word_embedding = nn.Embedding(vocab_size, args.emb_size)
         self.position_embedding = nn.Embedding(self.max_seq_length, args.emb_size)
         self.segment_embedding = nn.Embedding(3, args.emb_size)
+        self.direction_embedding = nn.Embedding(3, args.emb_size)  # 0=负方向，1=中性，2=正方向
         
 
         
@@ -79,22 +80,37 @@ class WordPosSegEmbedding(nn.Module):
             self.layer_norm = LayerNorm(args.emb_size)
     
     def convert(self,src):
-        # print(src.shape)
-        result1 = src.view(src.shape[0],-1,10).sum(2)
-        result2 = src.view(src.shape[0],-1,20).sum(2)
-        result3 = src.view(src.shape[0],-1,40).sum(2)
-        return result1,result2,result3
+        def grouped_sum_and_sign(src, group_size):
+            length = src.shape[1]
+            pad_len = (group_size - length % group_size) % group_size
+            if pad_len > 0:
+                pad = torch.zeros(src.shape[0], pad_len, device=src.device, dtype=src.dtype)
+                src = torch.cat([src, pad], dim=1)
+            grouped = src.view(src.shape[0], -1, group_size)  # [B, G, S]
+            sums = grouped.sum(dim=2)  # [B, G]
+            signs = torch.sign(sums).long()  # [-1, 0, +1] → direction
+            signs = (signs + 1)  # 把 [-1,0,1] 映射为 [0,1,2] for 3-class embedding
+            return sums, signs
+
+        result1, sign1 = grouped_sum_and_sign(src, 2)
+        result2, sign2 = grouped_sum_and_sign(src, 20)
+        result3, sign3 = grouped_sum_and_sign(src, 40)
+        return result1, sign1, result2, sign2, result3, sign3
+
 
     def forward(self, src, seg):
         # src = src.float()
         # pdb.set_trace()
         
-        src1,src2,src3 = self.convert(src)
+        src1,dir1,src2,dir2,src3,dir3 = self.convert(src)
         
 
         src1 = torch.clamp(src1, min=0, max=60004)
         src2 = torch.clamp(src2, min=0, max=60004)
         src3 = torch.clamp(src3, min=0, max=60004)
+        dir1 = self.direction_embedding(dir1)
+        dir2 = self.direction_embedding(dir2)
+        dir3 = self.direction_embedding(dir3)
         # print(src)
         src1 = src1.long()
         src2 = src2.long()
@@ -131,9 +147,9 @@ class WordPosSegEmbedding(nn.Module):
         seg_emb2 = self.segment_embedding(seg2)
         seg_emb3 = self.segment_embedding(seg3)
 
-        emb1 = word_emb1 + pos_emb1 + seg_emb1
-        emb2 = word_emb2 + pos_emb2 + seg_emb2
-        emb3 = word_emb3 + pos_emb3 + seg_emb3
+        emb1 = word_emb1 + pos_emb1 + seg_emb1 + dir1
+        emb2 = word_emb2 + pos_emb2 + seg_emb2 + dir2
+        emb3 = word_emb3 + pos_emb3 + seg_emb3 + dir3
         
         if not self.remove_embedding_layernorm:
             # print(emb)
